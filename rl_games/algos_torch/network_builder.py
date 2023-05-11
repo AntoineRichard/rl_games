@@ -1430,7 +1430,7 @@ class MLPDictThrusterA2CBuilder(NetworkBuilder):
             self.actor_mlp = nn.Sequential()
             self.critic_mlp = nn.Sequential()
 
-            mlp_input_shape = input_shape['state'][0] + input_shape['mask'][0]
+            mlp_input_shape = input_shape['state'][0] + input_shape['masks'][0]
 
             in_mlp_shape = mlp_input_shape
             if len(self.units) == 0:
@@ -1490,7 +1490,7 @@ class MLPDictThrusterA2CBuilder(NetworkBuilder):
             states = obs_dict.get('rnn_states', None)
 
             if self.separate:
-                a_out = c_out = torch.cat([obs['state'], obs['mask']],-1)
+                a_out = c_out = torch.cat([obs['state'], obs['masks']],-1)
                 a_out = self.actor_mlp(a_out)
                 c_out = self.critic_mlp(c_out)
                             
@@ -1513,7 +1513,7 @@ class MLPDictThrusterA2CBuilder(NetworkBuilder):
 
                     return mu, sigma, value, states
             else:
-                out = torch.cat([obs['state'], obs['mask']],-1)
+                out = torch.cat([obs['state'], obs['masks']],-1)
                 out = self.actor_mlp(out)
                 value = self.value_act(self.value(out))
 
