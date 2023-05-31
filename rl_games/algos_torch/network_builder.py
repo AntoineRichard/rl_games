@@ -9,7 +9,7 @@ import torch.optim as optim
 import math
 import numpy as np
 from rl_games.algos_torch.d2rl import D2RLNet
-from rl_games.algos_torch.transformer import TransformerModel, MetamorphModel
+from rl_games.algos_torch.transformer import TransformerModel, MetamorphModel, StatePositionalEncoder
 from rl_games.algos_torch.sac_helper import  SquashedNormal
 from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
 from rl_games.common.layers.value import  TwoHotEncodedValue, DefaultValue
@@ -1264,7 +1264,11 @@ class MLPDictA2CBuilder(NetworkBuilder):
             self.actor_mlp = nn.Sequential()
             self.critic_mlp = nn.Sequential()
 
-            mlp_input_shape = input_shape['state'][0]
+            if self.use_state_pe:
+                self.encoding = StatePositionalEncoder(input_shape['state'][0], self.pe_nfreq, log_space = self.pe_log)
+                mlp_input_shape = self.encoding.d_output
+            else:
+                mlp_input_shape = input_shape['state'][0]
 
             in_mlp_shape = mlp_input_shape
             if len(self.units) == 0:
@@ -1323,8 +1327,13 @@ class MLPDictA2CBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             states = obs_dict.get('rnn_states', None)
 
+            if self.use_state_pe:
+                inputs = self.encoding(obs['state'])
+            else:
+                inputs = obs['state']
+
             if self.separate:
-                a_out = c_out = obs['state']
+                a_out = c_out = inputs
                 a_out = self.actor_mlp(a_out)
                 c_out = self.critic_mlp(c_out)
                             
@@ -1347,7 +1356,7 @@ class MLPDictA2CBuilder(NetworkBuilder):
 
                     return mu, sigma, value, states
             else:
-                out = obs['state']
+                out = inputs
                 out = self.actor_mlp(out)
                 value = self.value_act(self.value(out))
 
@@ -1391,6 +1400,9 @@ class MLPDictA2CBuilder(NetworkBuilder):
             self.has_space = 'space' in params
             self.central_value = params.get('central_value', False)
             self.joint_obs_actions_config = params.get('joint_obs_actions', None)
+            self.use_state_pe = params.get('use_state_encoding', False)
+            self.pe_nfreq = params.get('pe_nfreq', 6)
+            self.pe_log = params.get('pe_log', False)
 
             if self.has_space:
                 self.is_multi_discrete = 'multi_discrete'in params['space']
@@ -1430,7 +1442,13 @@ class MLPDictThrusterA2CBuilder(NetworkBuilder):
             self.actor_mlp = nn.Sequential()
             self.critic_mlp = nn.Sequential()
 
-            mlp_input_shape = input_shape['state'][0] + input_shape['masks'][0]
+            if self.use_state_pe:
+                self.encoding = StatePositionalEncoder(input_shape['state'][0], self.pe_nfreq, log_space = self.pe_log)
+                mlp_input_shape = self.encoding.d_output
+            else:
+                mlp_input_shape = input_shape['state'][0]
+
+            mlp_input_shape = mlp_input_shape + input_shape['masks'][0]
 
             in_mlp_shape = mlp_input_shape
             if len(self.units) == 0:
@@ -1489,8 +1507,13 @@ class MLPDictThrusterA2CBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             states = obs_dict.get('rnn_states', None)
 
+            if self.use_state_pe:
+                inputs = self.encoding(obs['state'])
+            else:
+                inputs = obs['state']
+
             if self.separate:
-                a_out = c_out = torch.cat([obs['state'], obs['masks']],-1)
+                a_out = c_out = torch.cat([inputs, obs['masks']],-1)
                 a_out = self.actor_mlp(a_out)
                 c_out = self.critic_mlp(c_out)
                             
@@ -1513,7 +1536,7 @@ class MLPDictThrusterA2CBuilder(NetworkBuilder):
 
                     return mu, sigma, value, states
             else:
-                out = torch.cat([obs['state'], obs['masks']],-1)
+                out = torch.cat([inputs, obs['masks']],-1)
                 out = self.actor_mlp(out)
                 value = self.value_act(self.value(out))
 
@@ -1557,6 +1580,9 @@ class MLPDictThrusterA2CBuilder(NetworkBuilder):
             self.has_space = 'space' in params
             self.central_value = params.get('central_value', False)
             self.joint_obs_actions_config = params.get('joint_obs_actions', None)
+            self.use_state_pe = params.get('use_state_encoding', False)
+            self.pe_nfreq = params.get('pe_nfreq', 6)
+            self.pe_log = params.get('pe_log', False)
 
             if self.has_space:
                 self.is_multi_discrete = 'multi_discrete'in params['space']
