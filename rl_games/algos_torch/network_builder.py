@@ -1938,12 +1938,6 @@ class CNNDictA2CBuilder(NetworkBuilder):
             }
             self.cnn_encoder = self._build_conv(**cnn_args)
             cnn_output_size = self._calc_input_size(cnn_input_shape, self.cnn_encoder)
-
-            if self.use_state_pe:
-                self.encoding = StatePositionalEncoder(input_shape['state'][0], self.pe_nfreq, log_space = self.pe_log)
-                mlp_input_shape = self.encoding.d_output
-            else:
-                mlp_input_shape = input_shape['state'][0]
                 
             in_mlp_shape = cnn_output_size
             if len(self.units) == 0:
@@ -2005,7 +1999,7 @@ class CNNDictA2CBuilder(NetworkBuilder):
             # input expected shape (B, C, H, W)
             rgb = obs['rgb']
             depth = obs['depth']
-            rgbd_norm = F.normalize(torch.cat([rgb, depth], dim=1), dim=1)
+            rgbd_norm = torch.cat([rgb, depth], dim=1)
             rgbd_encoding = self.cnn_encoder(rgbd_norm)
             rgbd_encoding = rgbd_encoding.contiguous().view(rgbd_encoding.size(0), -1)
             
