@@ -1939,8 +1939,8 @@ class CNNDictA2CBuilder(NetworkBuilder):
             self.cnn_encoder = self._build_conv(**cnn_args)
             cnn_output_size = self._calc_input_size(cnn_input_shape, self.cnn_encoder)
             
-            self.num_vel_repeat = cnn_output_size // (self.velcity_dim * self.img_velocity_emb_inv)
-            in_mlp_shape = cnn_output_size + self.num_vel_repeat * self.velcity_dim
+            self.num_vel_repeat = cnn_output_size // (self.velocity_dim * self.img_velocity_emb_inv)
+            in_mlp_shape = cnn_output_size + self.num_vel_repeat * self.velocity_dim
             if len(self.units) == 0:
                 out_size = in_mlp_shape
             else:
@@ -2088,7 +2088,7 @@ class CNNDictA2CBuilder(NetworkBuilder):
             self.pe_nfreq = params['mlp'].get('pe_nfreq', 6)
             self.pe_log = params['mlp'].get('pe_log', False)
             self.cnn = params['cnn']
-            self.velcity_dim = params.get('velocity_dim', 3)
+            self.velocity_dim = params.get('velocity_dim', 3)
             self.img_velocity_emb_inv = params.get('img_velocity_emb_inv', 10)
 
             if self.has_space:
