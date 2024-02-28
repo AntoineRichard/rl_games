@@ -1907,7 +1907,7 @@ class RNNDictA2CBuilder(NetworkBuilder):
     
 class CNNDictA2CBuilder(NetworkBuilder):
     """
-    Network class using CNN + MLP with RGBD input.
+    Network class using CNN + MLP with RGBD + local velocity input.
     """
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
@@ -1938,8 +1938,9 @@ class CNNDictA2CBuilder(NetworkBuilder):
             }
             self.cnn_encoder = self._build_conv(**cnn_args)
             cnn_output_size = self._calc_input_size(cnn_input_shape, self.cnn_encoder)
-                
-            in_mlp_shape = cnn_output_size
+            
+            self.num_vel_repeat = cnn_output_size // (self.velcity_dim * self.img_velocity_emb_inv)
+            in_mlp_shape = cnn_output_size + self.num_vel_repeat * self.velcity_dim
             if len(self.units) == 0:
                 out_size = in_mlp_shape
             else:
@@ -2003,8 +2004,17 @@ class CNNDictA2CBuilder(NetworkBuilder):
             rgbd_encoding = self.cnn_encoder(rgbd_norm)
             rgbd_encoding = rgbd_encoding.contiguous().view(rgbd_encoding.size(0), -1)
             
-            # pass conv output to mlp
-            inputs = rgbd_encoding
+            # get local velocity
+            T_w2b = torch.stack([
+                torch.stack([obs['state'][:, 0], -obs['state'][:, 1], torch.zeros_like(obs['state'][:, 0])], dim=-1),
+                torch.stack([obs['state'][:, 1], obs['state'][:, 0], torch.zeros_like(obs['state'][:, 0])], dim=-1),
+                torch.stack([torch.zeros_like(obs['state'][:, 0]), torch.zeros_like(obs['state'][:, 0]), torch.ones_like(obs['state'][:, 0])], dim=-1),
+            ], dim=-1)
+            velocity = torch.bmm(T_w2b, obs['state'][:, 2:5].unsqueeze(-1).squeeze(-1)) #local velocity (B, 3)
+            velocity = velocity.repeat(1, self.num_vel_repeat) #(B, 3 * num_vel_repeat)
+            
+            # pass concatenation of conv output and local velocity to mlp input
+            inputs = torch.cat([rgbd_encoding, velocity], dim=-1)
 
             if self.separate:
                 a_out = c_out = inputs
@@ -2078,6 +2088,8 @@ class CNNDictA2CBuilder(NetworkBuilder):
             self.pe_nfreq = params['mlp'].get('pe_nfreq', 6)
             self.pe_log = params['mlp'].get('pe_log', False)
             self.cnn = params['cnn']
+            self.velcity_dim = params.get('velocity_dim', 3)
+            self.img_velocity_emb_inv = params.get('img_velocity_emb_inv', 10)
 
             if self.has_space:
                 self.is_multi_discrete = 'multi_discrete'in params['space']
