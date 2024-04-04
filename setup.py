@@ -46,7 +46,7 @@ setup(name='rl-games',
             'psutil',
             'pyyaml',
             'opencv-python',
-            'wandb==0.12.21'
+            'wandb>=0.12'
             # Optional dependencies
             # 'ray>=1.1.0',
       ],
