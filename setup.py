@@ -44,7 +44,9 @@ setup(name='rl-games',
             'tensorboardX>=1.6',
             'setproctitle',
             'psutil',
-            'pyyaml'
+            'pyyaml',
+            'opencv-python',
+            'wandb==0.12.21'
             # Optional dependencies
             # 'ray>=1.1.0',
       ],
