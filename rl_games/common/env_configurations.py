@@ -86,16 +86,6 @@ def create_slime_gym_env(**kwargs):
         env = gym.make(name, **kwargs)
     return env
 
-def create_connect_four_env(**kwargs):
-    from rl_games.envs.connect4_selfplay import ConnectFourSelfPlay
-    name = kwargs.pop('name')
-    limit_steps = kwargs.pop('limit_steps', False)
-    self_play = kwargs.pop('self_play', False)
-    if self_play:
-        env = ConnectFourSelfPlay(name, **kwargs) 
-    else:
-        env = gym.make(name, **kwargs)
-    return env
 
 def create_atari_gym_env(**kwargs):
     #frames = kwargs.pop('frames', 1)
@@ -163,13 +153,32 @@ def create_roboschool_env(name):
     return gym.make(name)
 
 def create_smac(name, **kwargs):
-    from rl_games.envs.smac_env import SMACEnv
+    from rl_games.envs.smac_env import SMACEnv, MultiDiscreteSmacWrapper
     frames = kwargs.pop('frames', 1)
     transpose = kwargs.pop('transpose', False)
     flatten = kwargs.pop('flatten', True)
     has_cv = kwargs.get('central_value', False)
+    as_single_agent = kwargs.pop('as_single_agent', False)
     env = SMACEnv(name, **kwargs)
     
+    
+    if frames > 1:
+        if has_cv:
+            env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
+        else:
+            env = wrappers.BatchedFrameStack(env, frames, transpose=False, flatten=flatten)
+
+    if as_single_agent:
+        env = MultiDiscreteSmacWrapper(env)
+    return env
+
+def create_smac_v2(name, **kwargs):
+    from rl_games.envs.smac_v2_env import SMACEnvV2
+    frames = kwargs.pop('frames', 1)
+    transpose = kwargs.pop('transpose', False)
+    flatten = kwargs.pop('flatten', True)
+    has_cv = kwargs.get('central_value', False)
+    env = SMACEnvV2(name, **kwargs)
     
     if frames > 1:
         if has_cv:
@@ -179,16 +188,18 @@ def create_smac(name, **kwargs):
     return env
 
 def create_smac_cnn(name, **kwargs):
-    from rl_games.envs.smac_env import SMACEnv
+    from rl_games.envs.smac_env import SMACEnv, MultiDiscreteSmacWrapper
     has_cv = kwargs.get('central_value', False)
     frames = kwargs.pop('frames', 4)
     transpose = kwargs.pop('transpose', False)
+
     env = SMACEnv(name, **kwargs)
     if has_cv:
         env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=transpose)
     else:
         env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
-        
+    if as_single_agent:
+        env = MultiDiscreteSmacWrapper(env)
     return env
 
 def create_test_env(name, **kwargs):
@@ -242,6 +253,7 @@ def create_env(name, **kwargs):
         env = wrappers.TimeLimit(env, steps_limit)
     return env
 
+# Dictionary of env_name as key and a sub-dict containing env_type and a env-creator function
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
@@ -359,6 +371,10 @@ configurations = {
         'env_creator' : lambda **kwargs : create_smac(**kwargs),
         'vecenv_type' : 'RAY'
     },
+    'smac_v2' : {
+        'env_creator' : lambda **kwargs : create_smac_v2(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
     'smac_cnn' : {
         'env_creator' : lambda **kwargs : create_smac_cnn(**kwargs),
         'vecenv_type' : 'RAY'
@@ -389,10 +405,6 @@ configurations = {
     },
     'minigrid_env' : {
         'env_creator' : lambda **kwargs : create_minigrid_env(kwargs.pop('name'), **kwargs),
-        'vecenv_type' : 'RAY'
-    },
-    'connect4_env' : {
-        'env_creator' : lambda **kwargs : create_connect_four_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
     'multiwalker_env' : {
@@ -447,4 +459,11 @@ def get_obs_and_action_spaces_from_config(config):
 
 
 def register(name, config):
+    """Add a new key-value pair to the known environments (configurations dict).
+
+    Args:
+        name (:obj:`str`): Name of the env to be added.
+        config (:obj:`dict`): Dictionary with env type and a creator function.
+
+    """
     configurations[name] = config

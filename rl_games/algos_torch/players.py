@@ -105,6 +105,7 @@ class BasicPpoPlayerContinuous(BasicBasePlayer):
 
 
 class PpoPlayerContinuous(BasePlayer):
+
     def __init__(self, params):
         BasePlayer.__init__(self, params)
         self.network = self.config["network"]
@@ -303,6 +304,7 @@ class BasicPpoPlayerDiscrete(BasicBasePlayer):
 
 
 class PpoPlayerDiscrete(BasePlayer):
+
     def __init__(self, params):
         BasePlayer.__init__(self, params)
 
@@ -422,6 +424,7 @@ class PpoPlayerDiscrete(BasePlayer):
 
 
 class SACPlayer(BasePlayer):
+
     def __init__(self, params):
         BasePlayer.__init__(self, params)
         self.network = self.config["network"]

@@ -1,19 +1,25 @@
 import gym
 import numpy as np
-from smac.env import StarCraft2Env
-from smac.env import MultiAgentEnv
+import yaml
+from smacv2.env import StarCraft2Env
+from smacv2.env import MultiAgentEnv
+from smacv2.env.starcraft2.wrapper import StarCraftCapabilityEnvWrapper
 
-class SMACEnv(gym.Env):
+class SMACEnvV2(gym.Env):
     def __init__(self, name="3m",  **kwargs):
         gym.Env.__init__(self)
         self._seed = kwargs.pop('seed', None)
+        self.path = kwargs.pop('path')
         self.reward_sparse = kwargs.get('reward_sparse', False)
-        self.use_central_value = kwargs.pop('central_value', False)
+        self.use_central_value = kwargs.pop('central_value', True)
         self.concat_infos = True
         self.random_invalid_step = kwargs.pop('random_invalid_step', False)
         self.replay_save_freq = kwargs.pop('replay_save_freq', 10000)
         self.apply_agent_ids = kwargs.pop('apply_agent_ids', True)
-        self.env = StarCraft2Env(map_name=name, seed=self._seed, **kwargs)
+        with open(self.path, 'r') as stream:
+            config = yaml.safe_load(stream)
+            env_args = config['env_args']
+        self.env = StarCraftCapabilityEnvWrapper(seed=self._seed, **env_args)
         self.env_info = self.env.get_env_info()
 
         self._game_num = 0
@@ -101,38 +107,6 @@ class SMACEnv(gym.Env):
     def has_action_mask(self):
         return not self.random_invalid_step
 
-    def seed(self, seed):
+    def seed(self, _):
         pass
-        #self.env.seed(seed)
-
-class MultiDiscreteSmacWrapper(gym.Env):
-    def __init__(self, env):
-        gym.Env.__init__(self)
-        self.env = env
-        self.observation_space = self.env.state_space
-        self.action_space = gym.spaces.Tuple([self.env.action_space] * self.env.get_number_of_agents())
-
-    def step(self, actions):
-        fixed_rewards = None
-        obses, reward, done, info = self.env.step(actions)
-        return obses['state'], reward[0], done[0], info
-
-    def reset(self):
-        obses = self.env.reset()
-        return obses['state']
-
-    def has_action_mask(self):
-        return self.env.has_action_mask()
-
-    def get_action_mask(self):
-        action_maks = self.env.get_action_mask()
-        action_maks = action_maks.flatten()
-        return np.expand_dims(action_maks, axis=0)
-
-    def get_number_of_agents(self):
-        return 1
-
-    def seed(self, seed):
-        pass
-        #self.env.seed(seed)
 

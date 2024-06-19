@@ -29,6 +29,10 @@
 
 ![Allegro_Hand_real_world](https://user-images.githubusercontent.com/463063/216529475-3adeddea-94c3-4ac0-99db-00e7df4ba54b.gif)
 
+* [DexPBT](https://sites.google.com/view/dexpbt)
+
+![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
+
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
 * [Mujoco Envpool](docs/MUJOCO_ENVPOOL.md) 
@@ -259,6 +263,9 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | env_config             |                           |         | Env configuration block. It goes directly to the environment. This example was take for my atari wrapper.                                                    |
 | skip                   | 4                         |         | Number of frames to skip                                                                                                                                     |
 | name                   | BreakoutNoFrameskip-v4    |         | The exact name of an (atari) gym env. An example, depends on the training env this parameters can be different.                                                                   |
+| evaluation             | True                      | False   | Enables the evaluation feature for inferencing while training. |
+| update_checkpoint_freq | 100                       | 100     | Frequency in number of steps to look for new checkpoints. |
+| dir_to_monitor         |                           |         | Directory to search for checkpoints in during evaluation. |
 
 ## Custom network example: 
 [simple test network](rl_games/envs/test_network.py)  
@@ -287,11 +294,20 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
-1.6.1 (Unreleased)
+1.6.1
 * Fixed Central Value RNN bug which occurs if you train ma multi agent environment.
 * Added Deepmind Control PPO benchmark.
 * Added a few more experimental ways to train value prediction (OneHot, TwoHot encoding and crossentropy loss instead of L2).
 * New methods didn't. It is impossible to turn it on from the yaml files. Once we find an env which trains better it will be added to the config.
+* Added shaped reward graph to the tensorboard.
+* Fixed bug with SAC not saving weights with save_frequency.
+* Added multi-node training support for GPU-accelerated training environments like Isaac Gym. No changes in training scripts are required. Thanks to @ankurhanda and @ArthurAllshire for assistance in implementation.
+* Added evaluation feature for inferencing during training. Checkpoints from training process can be automatically picked up and updated in the inferencing process when enabled.
+* Added get/set API for runtime update of rl training parameters. Thanks to @ArthurAllshire for the initial version of fast PBT code.
+* Fixed SAC not loading weights properly.
+* Removed Ray dependency for use cases it's not required.
+* Added warning for using deprecated 'seq_len' instead of 'seq_length' in configs with RNN networks.
+
 
 1.6.0
 

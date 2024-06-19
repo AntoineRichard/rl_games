@@ -2,8 +2,6 @@ import os
 import torch
 from torch import nn
 import torch.distributed as dist
-import gym
-import numpy as np
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 from rl_games.common  import common_losses
@@ -12,12 +10,13 @@ from rl_games.common import schedulers
 
 
 class CentralValueTrain(nn.Module):
+
     def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, 
-                seq_len, normalize_value, network, config, writter, max_epochs, multi_gpu, zero_rnn_on_done):
+                seq_length, normalize_value, network, config, writter, max_epochs, multi_gpu, zero_rnn_on_done):
         nn.Module.__init__(self)
 
         self.ppo_device = ppo_device
-        self.num_agents, self.horizon_length, self.num_actors, self.seq_len = num_agents, horizon_length, num_actors, seq_len
+        self.num_agents, self.horizon_length, self.num_actors, self.seq_length = num_agents, horizon_length, num_actors, seq_length
         self.normalize_value = normalize_value
         self.num_actions = num_actions
         self.state_shape = state_shape
@@ -74,26 +73,34 @@ class CentralValueTrain(nn.Module):
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
         self.batch_size = self.horizon_length * self.num_actors
+
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
             total_agents = self.num_actors #* self.num_agents
-            num_seqs = self.horizon_length // self.seq_len
-            assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_len == 0)
+            num_seqs = self.horizon_length // self.seq_length
+            assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_length == 0)
             self.mb_rnn_states = [ torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype=torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
+        self.local_rank = 0
+        self.global_rank = 0
+        self.world_size = 1
         if self.multi_gpu:
-            self.rank = int(os.getenv("LOCAL_RANK", "0"))
-            self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
-            # dist.init_process_group("nccl", rank=self.rank, world_size=self.rank_size)
+            # local rank of the GPU in a node
+            self.local_rank = int(os.getenv("LOCAL_RANK", "0"))
+            # global rank of the GPU
+            self.global_rank = int(os.getenv("RANK", "0"))
+            # total number of GPUs across all nodes
+            self.world_size = int(os.getenv("WORLD_SIZE", "1"))
 
-            self.device_name = 'cuda:' + str(self.rank)
+            self.device_name = 'cuda:' + str(self.local_rank)
             config['device'] = self.device_name
-            if self.rank != 0:
+
+            if self.global_rank != 0:
                 config['print_stats'] = False
                 config['lr_schedule'] = None
 
-        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_len)
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_length)
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -160,9 +167,9 @@ class CentralValueTrain(nn.Module):
     def pre_step_rnn(self, n):
         if not self.is_rnn:
             return
-        if n % self.seq_len == 0:
+        if n % self.seq_length == 0:
             for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
-                mb_s[n // self.seq_len,:,:,:] = s
+                mb_s[n // self.seq_length,:,:,:] = s
 
     def post_step_rnn(self, all_done_indices, zero_rnn_on_done=True):
         if not self.is_rnn:
@@ -175,7 +182,6 @@ class CentralValueTrain(nn.Module):
 
     def forward(self, input_dict):
         return self.model(input_dict)
-
 
     def get_value(self, input_dict):
         self.eval()
@@ -238,7 +244,7 @@ class CentralValueTrain(nn.Module):
 
         batch_dict = {'obs' : obs_batch, 
                     'actions' : actions_batch,
-                    'seq_length' : self.seq_len,
+                    'seq_length' : self.seq_length,
                     'dones' : dones_batch}
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
@@ -269,7 +275,7 @@ class CentralValueTrain(nn.Module):
             for param in self.model.parameters():
                 if param.grad is not None:
                     param.grad.data.copy_(
-                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.rank_size
+                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
                     )
                     offset += param.numel()
 
@@ -277,5 +283,5 @@ class CentralValueTrain(nn.Module):
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.optimizer.step()
-        
+
         return loss

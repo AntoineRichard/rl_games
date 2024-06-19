@@ -39,7 +39,6 @@ setup(name='rl-games',
             'gym>=0.17.2',
             'torch>=1.7.0',
             'numpy>=1.16.0',
-            'ray>=1.1.0',
             'tensorboard>=1.14.0',
             'tensorboardX>=1.6',
             'setproctitle',
@@ -49,5 +48,6 @@ setup(name='rl-games',
             'wandb>=0.12'
             # Optional dependencies
             # 'ray>=1.1.0',
+            'watchdog>=2.1.9,<3.0.0',  # for evaluation process
       ],
       )
