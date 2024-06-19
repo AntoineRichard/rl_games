@@ -314,48 +314,6 @@ class RolloutStorage(object):
         else:
             return batch_td.mean().item()
 
-    def get_batched_action_complexity(self):
-        """
-        Returns per-batch LZ complexity scores of the action trajectories in the buffer
-        """
-        num_processes = self.actions.shape[1]
-        batched_complexity = torch.zeros(num_processes, 1, dtype=torch.float)
-        for b in range(num_processes):
-            num_traj = 0
-            avg_complexity = 0
-            done_steps = [0] + (self.masks[:,b,0] == 0).nonzero().flatten().tolist()
-            for i, t in enumerate(done_steps[:-1]):
-                if len(done_steps) > 1:
-                    next_done = done_steps[i+1]
-                else:
-                    next_done = self.actions.shape[0]
-                action_str = ' '.join([str(a.item()) for a in self.actions[t:next_done,b,0]])
-                avg_complexity += lempel_ziv_complexity(action_str)
-                num_traj += 1
-            batched_complexity[b] = avg_complexity/num_traj
-
-        return batched_complexity
-
-    def get_action_complexity(self):
-        """
-        Returns mean LZ complexity scores of the action trajectories in the buffer
-        """
-        num_processes = self.actions.shape[1]
-        avg_complexity = 0
-        num_traj = 0
-        for b in range(num_processes):
-            done_steps = [0] + (self.masks[:,b,0] == 0).nonzero().flatten().tolist()
-            for i, t in enumerate(done_steps[:-1]):
-                if len(done_steps) > 1:
-                    next_done = done_steps[i+1]
-                else:
-                    next_done = self.actions.shape[0]
-                action_str = ' '.join([str(a.item()) for a in self.actions[t:next_done,b,0]])
-                avg_complexity += lempel_ziv_complexity(action_str)
-                num_traj += 1
-    
-        return avg_complexity/num_traj
-
     def get_action_traj(self, as_string=False):
         if as_string:
             num_processes = self.actions.shape[1]
