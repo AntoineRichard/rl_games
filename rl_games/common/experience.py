@@ -303,6 +303,7 @@ class ExperienceBuffer:
         self.is_discrete = False
         self.is_multi_discrete = False
         self.is_continuous = False
+        self.is_hybrit = False
         self.obs_base_shape = (self.horizon_length, self.num_agents * self.num_actors)
         self.state_base_shape = (self.horizon_length, self.num_actors)
         if type(self.action_space) is gym.spaces.Discrete:
@@ -310,9 +311,16 @@ class ExperienceBuffer:
             self.actions_num = self.action_space.n
             self.is_discrete = True
         if type(self.action_space) is gym.spaces.Tuple:
-            self.actions_shape = (len(self.action_space),) 
-            self.actions_num = [action.n for action in self.action_space]
-            self.is_multi_discrete = True
+            self.actions_shape = (len(self.action_space),)
+            num_continuous_actions = sum(1 for action in self.action_space if not isinstance(action, gym.spaces.Discrete))
+            self.discrete_actions_shape = (self.actions_shape[0] - num_continuous_actions,)
+            self.continous_action_shape = (num_continuous_actions,)
+            if num_continuous_actions > 0:
+                self.actions_num = [action.n if isinstance(action, gym.spaces.Discrete) else action.shape[0] for action in self.action_space]
+                self.is_hybrit = True
+            else:
+                self.actions_num = [action.n for action in self.action_space]
+                self.is_multi_discrete = True
         if type(self.action_space) is gym.spaces.Box:
             self.actions_shape = (self.action_space.shape[0],) 
             self.actions_num = self.action_space.shape[0]
@@ -340,6 +348,13 @@ class ExperienceBuffer:
 
         if self.is_discrete or self.is_multi_discrete:
             self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=int), obs_base_shape)
+        if self.is_hybrit:
+            discrete_actions = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.discrete_actions_shape, dtype=int), obs_base_shape)
+            continuos_actions = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.continous_action_shape, dtype=np.float32), obs_base_shape)
+            self.tensor_dict['actions'] = torch.cat((discrete_actions, continuos_actions), dim=-1)
+            self.tensor_dict['mus'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.continous_action_shape, dtype=np.float32), obs_base_shape)
+            self.tensor_dict['sigmas'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.continous_action_shape, dtype=np.float32), obs_base_shape)
+
         if self.use_action_masks:
             self.tensor_dict['action_masks'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape + (np.sum(self.actions_num),), dtype=np.bool), obs_base_shape)
         if self.is_continuous:

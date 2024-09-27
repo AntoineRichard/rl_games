@@ -421,6 +421,143 @@ class PpoPlayerDiscrete(BasePlayer):
         self.init_rnn()
 
 
+
+
+class PpoPlayerHybrit(BasePlayer):
+    def __init__(self, params):
+        BasePlayer.__init__(self, params)
+
+        self.network = self.config["network"]
+
+        num_continuous_actions = sum(1 for action in self.action_space if not isinstance(action, gym.spaces.Discrete))
+
+
+        if type(self.action_space) is gym.spaces.Discrete:
+            self.actions_num = self.action_space.n
+            self.is_multi_discrete = False
+        if type(self.action_space) is gym.spaces.Tuple:
+            self.actions_num = [action.n if isinstance(action, gym.spaces.Discrete) else action.shape[0] for action in self.action_space]
+
+            self.actions_low = torch.from_numpy(self.action_space[-num_continuous_actions].low.copy()).float().to(self.device)
+            self.actions_high = torch.from_numpy(self.action_space[-num_continuous_actions].high.copy()).float().to(self.device)
+
+            self.is_hybrit = True
+            self.is_multi_discrete = False
+
+        self.mask = [False]
+        self.normalize_input_keys = self.config.get("normalize_input_keys", [])
+        self.normalize_input = self.config["normalize_input"]
+        self.normalize_value = self.config.get("normalize_value", False)
+        obs_shape = self.obs_shape
+        config = {
+            "actions_num": self.actions_num,
+            "input_shape": obs_shape,
+            "num_seqs": self.num_agents,
+            "value_size": self.env_info.get("value_size", 1),
+            "normalize_value": self.normalize_value,
+            "normalize_input": self.normalize_input,
+            "normalize_input_keys": self.normalize_input_keys,
+        }
+
+        self.model = self.network.build(config)
+        self.model.to(self.device)
+        self.model.eval()
+        self.is_rnn = self.model.is_rnn()
+
+    def init_rnn(self):
+        if self.is_rnn:
+            rnn_states = self.model.get_default_rnn_state()
+            self.states = [
+                torch.zeros(
+                    (s.size()[0], self.batch_size, s.size()[2]), dtype=torch.float32
+                ).to(self.device)
+                for s in rnn_states
+            ]
+
+    def get_masked_action(self, obs, action_masks, is_deterministic=True): #TODO hybrit implementation
+        if self.has_batch_dimension == False:
+            obs = unsqueeze_obs(obs)
+        obs = self._preproc_obs(obs)
+        action_masks = torch.Tensor(action_masks).to(self.device).bool()
+        input_dict = {
+            "is_train": False,
+            "prev_actions": None,
+            "obs": obs,
+            "action_masks": action_masks,
+            "rnn_states": self.states,
+        }
+        self.model.eval()
+
+        with torch.no_grad():
+            res_dict = self.model(input_dict)
+        logits = res_dict["logits"]
+        action = res_dict["actions"]
+        self.states = res_dict["rnn_states"]
+        if self.is_multi_discrete:
+            if is_deterministic:
+                action = [
+                    torch.argmax(logit.detach(), axis=-1).squeeze() for logit in logits
+                ]
+                return torch.stack(action, dim=-1)
+            else:
+                return action.squeeze().detach()
+        else:
+            if is_deterministic:
+                return torch.argmax(logits.detach(), axis=-1).squeeze()
+            else:
+                return action.squeeze().detach()
+
+    def get_action(self, obs, is_deterministic=False):
+        if self.has_batch_dimension == False:
+            obs = unsqueeze_obs(obs)
+        obs = self._preproc_obs(obs)
+        self.model.eval()
+        input_dict = {
+            "is_train": False,
+            "prev_actions": None,
+            "obs": obs,
+            "rnn_states": self.states,
+        }
+        with torch.no_grad():
+            res_dict = self.model(input_dict)
+
+        logits = res_dict["logits"]
+        action = res_dict["actions"]
+        mu = res_dict["mus"]
+        self.states = res_dict["rnn_states"]
+        if self.is_multi_discrete:
+            if is_deterministic:
+                action = [torch.argmax(logit.detach(), axis=-1).squeeze() for logit in logits]
+                return torch.stack(action, dim=-1)
+            else:
+                return action.squeeze().detach()
+        elif self.is_hybrit:
+            if is_deterministic:
+                discrete_actions = torch.stack([torch.argmax(logit.detach(), axis=-1).squeeze() for logit in logits], dim=-1)
+                continuous_action = mu
+                return torch.cat([discrete_actions, continuous_action], dim=-1)
+            else:
+                action.squeeze().detach()
+        else:
+            if is_deterministic:
+                return torch.argmax(logits.detach(), axis=-1).squeeze()
+            else:
+                return action.squeeze().detach()
+
+    def restore(self, fn):
+        checkpoint = torch_ext.load_checkpoint(fn)
+        self.model.load_state_dict(checkpoint["model"])
+        if self.normalize_input and "running_mean_std" in checkpoint:
+            self.model.running_mean_std.load_state_dict(checkpoint["running_mean_std"])
+
+        env_state = checkpoint.get("env_state", None)
+        if self.env is not None and env_state is not None:
+            self.env.set_env_state(env_state)
+
+    def reset(self):
+        self.init_rnn()
+
+
 class SACPlayer(BasePlayer):
     def __init__(self, params):
         BasePlayer.__init__(self, params)

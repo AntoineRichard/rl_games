@@ -182,6 +182,102 @@ class ModelA2CMultiDiscrete(BaseModel):
                 }
                 return  result
 
+class ModelA2CHybrit(BaseModel):
+    def __init__(self, network):
+        BaseModel.__init__(self, 'a2c')
+        self.network_builder = network
+
+    class Network(BaseModelNetwork):
+        def __init__(self, a2c_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
+            self.a2c_network = a2c_network
+
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+        
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
+
+        def kl(self, p_dict, q_dict):
+            p = p_dict['logits']
+            q = q_dict['logits']
+            return divergence.d_kl_discrete_list(p, q)
+
+        def forward(self, input_dict):
+            is_train = input_dict.get('is_train', True)
+            action_masks = input_dict.get('action_masks', None)
+            prev_actions = input_dict.get('prev_actions', None)
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
+
+            logits, mu, logstd, value, states = self.a2c_network(input_dict)
+            sigma = torch.exp(logstd)
+            distr_continuous = torch.distributions.Normal(mu, sigma, validate_args=False)
+
+            if prev_actions is not None:
+                prev_actions_discrete, prev_actions_continuous = torch.split(prev_actions, [len(logits), mu.size(-1)], dim=-1)
+
+            # Create categorical distributions for multidiscrete actions
+            if action_masks is None:
+                categorical = [Categorical(logits=logit) for logit in logits]
+            else:   
+                categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
+            
+            if is_train:
+                prev_actions_discrete = torch.split(prev_actions_discrete, 1, dim=-1)
+                prev_neglogp_discrete = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, prev_actions_discrete)]
+                prev_neglogp_discrete = torch.stack(prev_neglogp_discrete, dim=-1).sum(dim=-1)
+
+                prev_neglogp_continuous = self.neglogp(prev_actions_continuous, mu, sigma, logstd)
+
+                prev_neglogp = prev_neglogp_discrete + prev_neglogp_continuous
+
+                entropy_discrete = [c.entropy() for c in categorical]
+                entropy_discrete = torch.stack(entropy_discrete, dim=-1).sum(dim=-1)
+                entropy_continuous = distr_continuous.entropy().sum(dim=-1)
+                entropy = entropy_discrete + entropy_continuous
+
+                result = {
+                    'prev_neglogp' : torch.squeeze(prev_neglogp),
+                    'logits' : [c.logits for c in categorical],
+                    'values' : value,
+                    'entropy' : torch.squeeze(entropy),
+                    'rnn_states' : states,
+                    'mus': mu,
+                    'sigmas': sigma
+                }
+                return result
+            else:
+                selected_action_discrete = [c.sample().long() for c in categorical]
+                selected_action_continuous = distr_continuous.sample()
+
+                neglogp_discrete = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, selected_action_discrete)]
+                neglogp_discrete = torch.stack(neglogp_discrete, dim=-1).sum(dim=-1)
+                neglogp_continuous = self.neglogp(selected_action_continuous, mu, sigma, logstd)
+
+                neglogp = neglogp_discrete + neglogp_continuous
+
+                selected_action_discrete = torch.stack(selected_action_discrete, dim=-1)
+                selected_action = torch.cat([selected_action_discrete, selected_action_continuous], dim=-1)
+
+                result = {
+                    'neglogpacs' : torch.squeeze(neglogp),
+                    'values' : self.denorm_value(value),
+                    'actions' : selected_action,
+                    'logits' : [c.logits for c in categorical],
+                    'rnn_states' : states,
+                    'mus': mu,
+                    'sigmas': sigma
+                }
+                return  result
+            
+        def neglogp(self, x, mean, std, logstd):
+            return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
+                + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
+                + logstd.sum(dim=-1)
+
 
 class ModelTransformerA2CMultiDiscrete(BaseModel):
     def __init__(self, network):

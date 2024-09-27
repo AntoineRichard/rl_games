@@ -53,6 +53,10 @@ class NetworkBuilder:
         self.network_factory.register_builder(
             "soft_actor_critic", lambda **kwargs: network_builder.SACBuilder()
         )
+        self.network_factory.register_builder(
+            "actor_critic_mlp_dict_hybrid",
+            lambda **kwargs: network_builder.MLPDictA2CBuilderHybrit(),
+        )
 
     def load(self, params):
         network_name = params["name"]
@@ -76,6 +80,10 @@ class ModelBuilder:
         self.model_factory.register_builder(
             "multi_discrete_a2c",
             lambda network, **kwargs: models.ModelA2CMultiDiscrete(network),
+        )
+        self.model_factory.register_builder(
+            "hybrit_a2c",
+            lambda network, **kwargs: models.ModelA2CHybrit(network),
         )
         self.model_factory.register_builder(
             "continuous_a2c",
